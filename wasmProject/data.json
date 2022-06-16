@@ -1,0 +1,28 @@
+{"dataset":{
+    "methods": [
+        "get",
+        "post",
+        "put",
+        "delete"
+    ],
+    "users": {
+        "alice": [
+            "get"
+        ],
+        "bob": [
+            "get",
+            "post"
+        ],
+        "charlie": [
+            "get",
+            "post",
+            "put"
+        ],
+        "dana": [
+            "get",
+            "post",
+            "put",
+            "delete"
+        ]
+    }
+}}
