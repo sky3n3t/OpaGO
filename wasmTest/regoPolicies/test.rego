@@ -2,7 +2,7 @@ package rules
 default valid_method=false
 default valid_user=false
 default allow=false
-httpReq:=http.send({"url":"https://httpbin.org/get","method":"GET","raise_error":false})
+httpReq:=http.send({"url":"http://www.skyenet.app:8080/eval/test2","method":"POST","raise_error":true,"body":{"str":"Testing","num":6980886897689}})
 jsonSmashed:=json.patch({"a": {"foo": 1}}, [{"op": "add", "path": "/a/bar", "value": 2}])
 tester (x)=y{
   y:=abs(x)
