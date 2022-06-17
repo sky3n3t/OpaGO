@@ -2,15 +2,16 @@ package wasm
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tetratelabs/wazero"
 )
 
-type vmOpts struct {
-	policy    []byte
-	data      []byte
-	memoryMin uint32
-	pool      *Pool
+type VmOpts struct {
+	Policy    []byte
+	Data      []byte
+	MemoryMin int
+	Pool      *Pool
 }
 type VM struct {
 	runtime                         wazero.Runtime
@@ -18,28 +19,36 @@ type VM struct {
 	module                          Module
 	policy, data                    []byte
 	parsedDataAddr, parsedInputAddr uint32
-	entrypoints                     []struct {
-		name string
-		id   int32
-	}
-	pool *Pool
+	entrypoints                     map[string]int32
+	memoryMin                       int
+	pool                            *Pool
 }
-
-func newVM(opts vmOpts) VM {
+func NewVM(opts VmOpts) VM {
 	vm := VM{}
 	vm.ctx = context.Background()
 	vm.runtime = wazero.NewRuntime()
-	vm.policy = opts.policy
-	vm.data = opts.data
+	vm.policy = opts.Policy
+	vm.data = opts.Data
+	vm.memoryMin = opts.MemoryMin
 	vm.LoadPolicy()
 	vm.LoadData()
+	fmt.Println(vm.GetEntrypoints())
 	return vm
 }
 func (vm *VM) SetPolicy(policy []byte) {
 	vm.policy = policy
 }
+func (vm *VM) Name() string {
+	return vm.module.name
+}
+func (vm *VM) GetEntrypoints() map[string]int32 {
+	return vm.module.GetEntrypoints()
+}
+func (vm *VM) Module() Module {
+	return vm.module
+}
 func (vm *VM) LoadPolicy() {
-	vm.module = newModule(moduleOpts{name: "opa", policy: vm.policy, ctx: vm.ctx, MinMemSize: 10, vm: vm}, vm.runtime)
+	vm.module = newModule(moduleOpts{name: "opa", policy: vm.policy, ctx: vm.ctx, MinMemSize: vm.memoryMin, vm: vm}, vm.runtime)
 }
 func (vm *VM) SetData(data []byte) {
 	vm.data = data
@@ -62,11 +71,11 @@ func (vm *VM) Eval(input []byte) string {
 	resLoc := vm.module.eval_ctx_get_result(eCtx)
 	return vm.module.fromRegoJSON(resLoc)
 }
-func (vm *VM) getData() string {
+func (vm *VM) GetData() string {
 	dataLoc := vm.module.json_dump(vm.parsedDataAddr)
 	return vm.module.readStr(dataLoc)
 }
-func (vm *VM) getPolicy() string {
+func (vm *VM) GetPolicy() string {
 	out := ""
 	for _, b := range vm.policy {
 		out += string(b)

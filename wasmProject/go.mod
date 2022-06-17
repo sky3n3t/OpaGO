@@ -1,4 +1,4 @@
-module skyenet.app/WASMvm
+module github.com/Kaijlo/OpaGO/wasmProject
 
 go 1.18
 

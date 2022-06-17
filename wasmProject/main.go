@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Kaijlo/OpaGO/wasmProject/wasm"
 	"github.com/gin-gonic/gin"
 )
 
-var vms map[string]VM = map[string]VM{}
+var vms map[string]wasm.VM = map[string]wasm.VM{}
 
 func main() {
-	wasm, err := os.ReadFile("./policy.wasm")
+	wasm1, err := os.ReadFile("./policy.wasm")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -35,10 +36,10 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	opts := vmOpts{wasm, []byte(ds2), 15, &Pool{}}
-	opts2 := vmOpts{wasm2, []byte{}, 15, &Pool{}}
-	vms["test"] = newVM(opts)
-	vms["test2"] = newVM(opts2)
+	opts := wasm.VmOpts{wasm1, []byte(ds2), 15, &wasm.Pool{}}
+	opts2 := wasm.VmOpts{wasm2, []byte{}, 15, &wasm.Pool{}}
+	vms["test"] = wasm.NewVM(opts)
+	vms["test2"] = wasm.NewVM(opts2)
 	router := gin.Default()
 	router.GET("/data/:vm", getData)
 	router.POST("/data/:vm", postData)
@@ -49,18 +50,18 @@ func main() {
 }
 func getData(c *gin.Context) {
 	vm := vms[c.Param("vm")]
-	if vm.module.name == "" {
+	if vm.Name() == "" {
 		c.String(http.StatusNotFound, fmt.Sprintf("invalid vm:%s", c.Param("vm")))
 		return
 	}
-	data := vm.getData()
+	data := vm.GetData()
 	var jsVal any
 	json.Unmarshal([]byte(data), &jsVal)
 	c.IndentedJSON(http.StatusOK, jsVal)
 }
 func postData(c *gin.Context) {
 	vm := vms[c.Param("vm")]
-	if vm.module.name == "" {
+	if vm.Name() == "" {
 		c.String(http.StatusNotFound, fmt.Sprintf("invalid vm:%s", c.Param("vm")))
 		return
 	}
@@ -77,17 +78,17 @@ func postData(c *gin.Context) {
 }
 func getPolicyWasm(c *gin.Context) {
 	vm := vms[c.Param("vm")]
-	if vm.module.name == "" {
+	if vm.Name() == "" {
 		c.String(http.StatusNotFound, fmt.Sprintf("invalid vm:%s", c.Param("vm")))
 		return
 	}
-	data := vm.getPolicy()
+	data := vm.GetPolicy()
 	c.IndentedJSON(http.StatusOK, data)
 }
 func postPolicyWasm(c *gin.Context) {
 	vm := vms[c.Param("vm")]
-	if vm.module.name == "" {
-		vm = wasm.newVM(wasm.vmOpts{memoryMin: 15})
+	if vm.Name() == "" {
+		vm = wasm.NewVM(wasm.VmOpts{MemoryMin: 15})
 	}
 	data := c.GetString("policy")
 	vm.SetPolicy([]byte(data))
@@ -97,7 +98,7 @@ func postPolicyWasm(c *gin.Context) {
 func eval(c *gin.Context) {
 	log.Println("evaluating")
 	vm := vms[c.Param("vm")]
-	if vm.module.name == "" {
+	if vm.Name() == "" {
 		c.String(http.StatusNotFound, fmt.Sprintf("invalid vm:%s", c.Param("vm")))
 		return
 	}
@@ -110,4 +111,5 @@ func eval(c *gin.Context) {
 	}
 	json.Unmarshal([]byte(vm.Eval([]byte(out))), &jsVal)
 	c.IndentedJSON(http.StatusOK, jsVal)
+
 }

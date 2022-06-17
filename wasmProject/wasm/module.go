@@ -34,6 +34,7 @@ type Module struct {
 	tCTX        *topdown.BuiltinContext
 	vm          *VM
 	builtinT    map[int32]topdown.BuiltinFunc
+	entrypointT map[string]int32
 }
 
 func (m *Module) newEnv(ctx context.Context, r wazero.Runtime, MemSize int) (api.Module, error) {
@@ -49,6 +50,10 @@ func (m *Module) newEnv(ctx context.Context, r wazero.Runtime, MemSize int) (api
 		ExportMemory("memory", uint32(MemSize)).
 		Instantiate(ctx, r)
 
+}
+func (m *Module) GetEntrypoints() map[string]int32 {
+	eLoc := m.entrypoints()
+	return parseJsonString(m.fromRegoJSON(eLoc))
 }
 func (m *Module) opaAbort(ptr int32) {
 	bytes := []byte{}
@@ -176,8 +181,7 @@ func newModule(opts moduleOpts, r wazero.Runtime) Module {
 		log.Panic(err)
 	}
 	m.builtinT = newBuiltinTable(m)
-	eLoc := m.entrypoints()
-	log.Printf("name:%s|entrypoints:%s", m.name, m.fromRegoJSON(eLoc))
+
 	return m
 }
 

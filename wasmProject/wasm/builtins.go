@@ -15,14 +15,14 @@ func newBuiltinTable(mod Module) map[int32]topdown.BuiltinFunc {
 	}
 	builtinsJSON, err := mod.module.ExportedFunction("opa_json_dump").Call(mod.ctx, builtinStrAddr[0])
 	builtinStr := mod.readStr(uint32(builtinsJSON[0]))
-	builtinNameMap := parseJsonBuiltinString(builtinStr)
+	builtinNameMap := parseJsonString(builtinStr)
 	builtinIdMap, err := getFuncs(builtinNameMap)
 	if err != nil {
 		log.Panic(err)
 	}
 	return builtinIdMap
 }
-func parseJsonBuiltinString(str string) map[string]int32 {
+func parseJsonString(str string) map[string]int32 {
 	currKey := ""
 	inKey := false
 	inVal := false
