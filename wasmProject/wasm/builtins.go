@@ -11,14 +11,14 @@ import (
 func newBuiltinTable(mod Module) map[int32]topdown.BuiltinFunc {
 	builtinStrAddr, err := mod.module.ExportedFunction("builtins").Call(mod.ctx)
 	if err != nil {
-		log.Panicln(err)
+		log.Println(err)
 	}
 	builtinsJSON, err := mod.module.ExportedFunction("opa_json_dump").Call(mod.ctx, builtinStrAddr[0])
 	builtinStr := mod.readStr(uint32(builtinsJSON[0]))
 	builtinNameMap := parseJsonString(builtinStr)
 	builtinIdMap, err := getFuncs(builtinNameMap)
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	return builtinIdMap
 }

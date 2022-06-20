@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Kaijlo/OpaGO/wasmProject/wasm"
+	"github.com/Kaijlo/OpaGO/wasmProject/sdk/internal/wasm"
 	"github.com/gin-gonic/gin"
 )
 
@@ -36,6 +36,8 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	pool := wasm.NewPool(5, 10, 20)
+	pool.SetPolicyData
 	opts := wasm.VmOpts{wasm1, []byte(ds2), 15, &wasm.Pool{}}
 	opts2 := wasm.VmOpts{wasm2, []byte{}, 15, &wasm.Pool{}}
 	vms["test"] = wasm.NewVM(opts)
