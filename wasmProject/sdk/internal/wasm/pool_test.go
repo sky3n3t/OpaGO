@@ -37,7 +37,7 @@ func TestOpaEvalGrowMemoryForLargeInput(t *testing.T) {
 	poolSize := 1
 	testPool := initPoolWithData(t, uint32(poolSize), module, "test/p", data)
 	expected := `{{"result":true}}`
-	tesing. ("TestOpaEvalGrowMemoryForLargeInput success")
+	t.Log("TestOpaEvalGrowMemoryForLargeInput success")
 	ensurePoolResults(t, ctx, testPool, poolSize, &input, expected)
 }
 
