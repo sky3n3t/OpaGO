@@ -17,6 +17,7 @@ import (
 	"io"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,13 +31,14 @@ type moduleOpts struct {
 
 //wrapper for wazero module
 type Module struct {
-	module, env api.Module
-	name        string
-	ctx         context.Context
-	tCTX        *topdown.BuiltinContext
-	vm          *VM
-	builtinT    map[int32]topdown.BuiltinFunc
-	entrypointT map[string]int32
+	module, env            api.Module
+	name                   string
+	ctx                    context.Context
+	tCTX                   *topdown.BuiltinContext
+	vm                     *VM
+	maxMemSize, minMemSize int
+	builtinT               map[int32]topdown.BuiltinFunc
+	entrypointT            map[string]int32
 }
 
 func (m *Module) newEnv(opts moduleOpts, r wazero.Runtime) (api.Module, error) {
@@ -202,7 +204,7 @@ func newModule(opts moduleOpts, r wazero.Runtime) Module {
 	var err error
 
 	m.env, err = m.newEnv(opts, r)
-
+	m.minMemSize, m.maxMemSize = opts.minMemSize, opts.maxMemSize
 	if err != nil {
 		log.Panic(err)
 	}
@@ -217,32 +219,32 @@ func newModule(opts moduleOpts, r wazero.Runtime) Module {
 
 // memory accessors
 func (m *Module) readMem(offset, length uint32) []byte {
-	data, overflow := m.env.Memory().Read(m.ctx, offset, length)
-	if !overflow {
-
-	}
+	data, _ := m.env.Memory().Read(m.ctx, offset, length)
 	return data
 }
 func (m *Module) readMemByte(offset uint32) byte {
-	data, overflow := m.env.Memory().ReadByte(m.ctx, offset)
-	if !overflow {
-	}
+	data, _ := m.env.Memory().ReadByte(m.ctx, offset)
 	return data
 }
-func (m *Module) writeMemPlus(wAddr uint32, wData []byte) error {
-	rest := wAddr + uint32(len(wData)) - uint32(m.env.Memory().Size(m.ctx)-wAddr)
-	if rest > 0 { // need to grow memory
-		_, success := m.env.Memory().Grow(m.ctx, Pages(rest))
+func (m *Module) writeMemPlus(wAddr uint32, wData []byte, caller string) error {
+	dataLeft := (m.env.Memory().Size(m.ctx)) - wAddr
+	finPtrLoc := wAddr + uint32(len(wData))
+	if (m.env.Memory().Size(m.ctx)) < finPtrLoc { // need to grow memory
+
+		delta := uint32(len(wData)) - dataLeft
+		//		log.Printf("delta:%d|dataSiz:%d|memLeft:%d|finLen:%d", delta, len(wData), dataLeft, wAddr+uint32(len(wData)))
+		_, success := m.env.Memory().Grow(m.ctx, Pages(uint32(delta)))
 		if !success {
-			return errors.New("exceeds max data")
+			return fmt.Errorf("%s: failed to grow memory by `%d` (max pages %d)", caller, Pages(delta), m.maxMemSize)
 		}
 	}
+	m.env.Memory().Write(m.ctx, wAddr, wData)
 	return nil
 }
 func (m *Module) writeMem(data []byte) uint32 {
 	addr, err := m.malloc(m.ctx, int32(len(data)))
 	if err != nil {
-		log.Panic(err)
+		log.Panic("internal_error: opa_malloc: failed")
 	}
 	m.env.Memory().Write(m.ctx, uint32(addr), data)
 
@@ -319,6 +321,9 @@ func (m *Module) entrypoints(ctx context.Context) int32 {
 }
 func (m *Module) eval_ctx_new(ctx context.Context) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_eval_ctx_new").Call(ctx)
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) eval_ctx_set_input(ctx context.Context, ctx_addr, value_addr int32) error {
@@ -335,10 +340,16 @@ func (m *Module) eval_ctx_set_entrypoint(ctx context.Context, ctx_addr, entrypoi
 }
 func (m *Module) eval_ctx_get_result(ctx context.Context, ctx_addr int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_eval_ctx_get_result").Call(ctx, uint64(ctx_addr))
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) malloc(ctx context.Context, size int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_malloc").Call(ctx, uint64(size))
+	if err != nil {
+		return 0, errors.New("internal_error: opa_malloc: failed")
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) free(ctx context.Context, addr int32) error {
@@ -347,18 +358,30 @@ func (m *Module) free(ctx context.Context, addr int32) error {
 }
 func (m *Module) json_parse(ctx context.Context, str_addr, size int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_json_parse").Call(ctx, uint64(str_addr), uint64(size))
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) value_parse(ctx context.Context, str_addr, size int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_value_parse").Call(ctx, uint64(str_addr), uint64(size))
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) json_dump(ctx context.Context, value_addr int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_json_dump").Call(ctx, uint64(value_addr))
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) value_dump(ctx context.Context, value_addr int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_value_dump").Call(ctx, uint64(value_addr))
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) heap_ptr_set(ctx context.Context, addr int32) error {
@@ -367,17 +390,31 @@ func (m *Module) heap_ptr_set(ctx context.Context, addr int32) error {
 }
 func (m *Module) heap_ptr_get(ctx context.Context) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_heap_ptr_get").Call(ctx)
+	if err != nil {
+		return 0, err
+	}
 	return int32(addr[0]), err
 }
 func (m *Module) value_add_path(ctx context.Context, base_value_addr, path_value_addr, value_addr int32) (int32, error) {
 	ret, err := m.module.ExportedFunction("opa_value_add_path").Call(ctx, uint64(base_value_addr), uint64(path_value_addr), uint64(value_addr))
+	if err != nil {
+		return 0, err
+	}
 	return int32(ret[0]), err
 }
 func (m *Module) value_remove_path(ctx context.Context, base_value_addr, path_value_addr int32) (int32, error) {
 	ret, err := m.module.ExportedFunction("opa_value_remove_path").Call(ctx, uint64(base_value_addr), uint64(path_value_addr))
+	if err != nil {
+		return 0, err
+	}
 	return int32(ret[0]), err
 }
 func (m *Module) opa_eval(ctx context.Context, entrypoint_id, data, input, input_len, heap_ptr int32) (int32, error) {
 	addr, err := m.module.ExportedFunction("opa_eval").Call(ctx, 0, uint64(entrypoint_id), uint64(data), uint64(input), uint64(input_len), uint64(heap_ptr), 0)
+	if err != nil {
+		str := err.Error()[5:]
+		end := strings.Index(str, " (recovered")
+		return 0, fmt.Errorf("internal_error: %s", str[:end])
+	}
 	return int32(addr[0]), err
 }

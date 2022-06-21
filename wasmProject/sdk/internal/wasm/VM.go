@@ -5,15 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
-	"time"
-
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/metrics"
 	"github.com/open-policy-agent/opa/topdown/cache"
 	"github.com/open-policy-agent/opa/topdown/print"
 	"github.com/tetratelabs/wazero"
+	"io"
+	//"log"
+	"time"
 )
 
 type vmOpts struct {
@@ -88,31 +87,7 @@ func newVM(opts vmOpts, runtime *wazero.Runtime) (*VM, error) {
 	vm.free = vm.module.free
 	vm.valueAddPath = vm.module.value_add_path
 	vm.valueRemovePath = vm.module.value_remove_path
-	var err error
-	if _, err = vm.malloc(vm.ctx, 0); err != nil {
-		return nil, err
-	}
-	if vm.baseHeapPtr, err = vm.getHeapState(vm.ctx); err != nil {
-		return nil, err
-	}
-	if opts.parsedData != nil {
-		vm.module.writeMemPlus(uint32(vm.baseHeapPtr), opts.parsedData)
-		vm.dataLen = int32(len(opts.parsedData))
-		vm.evalHeapPtr = vm.baseHeapPtr + int32(len(opts.parsedData))
-		err := vm.setHeapState(vm.ctx, vm.evalHeapPtr)
-		if err != nil {
-			return nil, err
-		}
-	} else if opts.data != nil {
-		if vm.toDRegoJSON(vm.ctx, opts.data, true) != nil {
-			return nil, err
-		}
-	} else {
-		vm.dataAddr = 0
-	}
-	if vm.evalHeapPtr, err = vm.getHeapState(vm.ctx); err != nil {
-		return nil, err
-	}
+	vm.setData(opts, vm.ctx, "newVM")
 	return &vm, nil
 }
 func (i *VM) SetPolicyData(ctx context.Context, opts vmOpts) error {
@@ -136,32 +111,7 @@ func (i *VM) SetPolicyData(ctx context.Context, opts vmOpts) error {
 		return err
 	}
 
-	if opts.parsedData != nil {
-		err := i.module.writeMemPlus(uint32(i.baseHeapPtr), opts.parsedData)
-		if err != nil {
-			return err
-		}
-		i.dataAddr = opts.parsedDataAddr
-		i.dataLen = int32(len(opts.parsedData))
-		i.evalHeapPtr = i.baseHeapPtr + int32(len(opts.parsedData))
-		err = i.setHeapState(ctx, i.evalHeapPtr)
-		if err != nil {
-			return err
-		}
-	} else if opts.data != nil {
-		err := i.toDRegoJSON(ctx, opts.data, true)
-		if err != nil {
-			return err
-		}
-	}
-
-	if eHeapPtr, err := i.getHeapState(ctx); err != nil {
-		return err
-	} else {
-		i.evalHeapPtr = eHeapPtr
-	}
-
-	return nil
+	return i.setData(opts, i.ctx, "setPolicyData")
 }
 
 type abortError struct {
@@ -170,6 +120,45 @@ type abortError struct {
 
 type cancelledError struct {
 	message string
+}
+
+func (v *VM) setData(opts vmOpts, ctx context.Context, path string) error {
+	var err error
+	//log.Println(path)
+	if v.baseHeapPtr, err = v.getHeapState(ctx); err != nil {
+		return err
+	}
+
+	// Optimization for cloning a vm, if provided a parsed data memory buffer
+	// insert it directly into the new vm's buffer and set pointers accordingly.
+	// This only works because the placement is deterministic (eg, for a given policy
+	// the base heap pointer and parsed data layout will always be the same).
+	if opts.parsedData != nil {
+		//log.Println("opts.parsedData is not nil")
+		err = v.module.writeMemPlus(uint32(v.baseHeapPtr), opts.parsedData, "data")
+		if err != nil {
+			return err
+		}
+		v.dataAddr = opts.parsedDataAddr
+		v.evalHeapPtr = v.baseHeapPtr + int32(len(opts.parsedData))
+		//log.Println(v.evalHeapPtr)
+		err := v.setHeapState(ctx, v.evalHeapPtr)
+		if err != nil {
+			return err
+		}
+	} else if opts.data != nil {
+		//log.Println("opts.data is not nil")
+		if err = v.toDRegoJSON(ctx, opts.data, true); err != nil {
+			return err
+		}
+	}
+	//log.Println(v.evalHeapPtr)
+	//log.Println("getting heap state")
+	if v.evalHeapPtr, err = v.getHeapState(ctx); err != nil {
+		return err
+	}
+	//log.Println(v.evalHeapPtr)
+	return nil
 }
 
 // Println is invoked if the policy WASM code calls opa_println().
@@ -347,7 +336,8 @@ func (i *VM) setHeapState(ctx context.Context, ptr int32) error {
 	return i.heapPtrSet(ctx, ptr)
 }
 func (vm *VM) cloneDataSegment() (int32, []byte) {
-	srcData := vm.module.readMem(uint32(vm.dataAddr), uint32(vm.dataLen))
+	//log.Printf("MemSize:%d|BaseHeapPtr:%d|EvalHeapPtr:%d \n", vm.module.env.Memory().Size(vm.ctx), vm.baseHeapPtr, vm.evalHeapPtr)
+	srcData := vm.module.readFrom(0)[vm.baseHeapPtr:vm.evalHeapPtr]
 	patchedData := make([]byte, len(srcData))
 	copy(patchedData, srcData)
 	return vm.dataAddr, patchedData
@@ -402,7 +392,7 @@ func (i *VM) Eval(ctx context.Context,
 		}
 		inputLen = int32(len(raw))
 		inputAddr = i.evalHeapPtr
-		err := i.module.writeMemPlus(uint32(inputAddr), raw)
+		err := i.module.writeMemPlus(uint32(inputAddr), raw, "input")
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +419,6 @@ func (i *VM) Eval(ctx context.Context,
 	retVals := []byte{byte(123)}
 	retVals = append(retVals, dataC...)
 	retVals = append(retVals, byte(125))
-	log.Println(i.GetData())
 	return retVals, nil
 }
 func (i *VM) evalCompat(ctx context.Context,
@@ -524,4 +513,11 @@ func (vm *VM) GetPolicy() string {
 }
 func (vm *VM) GetDataParsed() (int32, []byte) {
 	return vm.dataAddr, vm.module.readMem(uint32(vm.baseHeapPtr), uint32(vm.evalHeapPtr)-uint32(vm.baseHeapPtr))
+}
+func (vm *VM) GetJustDataParsed() []byte {
+	//log.Printf("MemSize:%d|BaseHeapPtr:%d|EvalHeapPtr:%d \n", vm.module.env.Memory().Size(vm.ctx), vm.baseHeapPtr, vm.evalHeapPtr)
+	srcData := vm.module.readFrom(0)[vm.baseHeapPtr:vm.evalHeapPtr]
+	patchedData := make([]byte, len(srcData))
+	copy(patchedData, srcData)
+	return patchedData
 }

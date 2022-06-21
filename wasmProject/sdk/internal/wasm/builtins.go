@@ -2,19 +2,18 @@ package wasm
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/open-policy-agent/opa/topdown"
 )
 
 func newBuiltinTable(mod Module) map[int32]topdown.BuiltinFunc {
-	builtinStrAddr, err := mod.module.ExportedFunction("builtins").Call(mod.ctx)
+	builtinStrAddr := mod.builtins(mod.ctx)
+	builtinsJSON, err := mod.json_dump(mod.ctx, builtinStrAddr)
 	if err != nil {
-		log.Println(err)
+		panic(err)
 	}
-	builtinsJSON, err := mod.module.ExportedFunction("opa_json_dump").Call(mod.ctx, builtinStrAddr[0])
-	builtinStr := mod.readStr(uint32(builtinsJSON[0]))
+	builtinStr := mod.readStr(uint32(builtinsJSON))
 	builtinNameMap := parseJsonString(builtinStr)
 	builtinIdMap, err := getFuncs(builtinNameMap)
 	if err != nil {

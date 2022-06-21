@@ -107,7 +107,7 @@ func TestOPA(t *testing.T) {
 			Policy:      `a = true`,
 			Query:       "data.p.b = x",
 			Evals: []Eval{
-				{Result: `set()`},
+				{Result: `{}`},
 			},
 		},
 		{
@@ -328,6 +328,7 @@ a = "c" { input > 2 }`,
 				if !ast.MustParseTerm(string(r.Result)).Equal(expected) {
 					t.Errorf("\nExpected: %v\nGot: %v\n", expected, string(r.Result))
 				}
+
 			}
 
 			instance.Close()
