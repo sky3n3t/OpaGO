@@ -10,18 +10,18 @@ package opa_test
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
-	"testing"
-
+	"github.com/Kaijlo/OpaGO/wasmProject/sdk/opa"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/bundle"
 	"github.com/open-policy-agent/opa/compile"
-	"github.com/Kaijlo/OpaGO/wasmProject/sdk/opa"
-	wasm_util "github.com/open-policy-agent/opa/internal/wasm/util"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/util"
+	"os"
+	"strings"
+	"testing"
 )
+
+const PageSize = 65535
 
 // control dumping in this file
 const dump = false
@@ -34,7 +34,7 @@ func TestOPA(t *testing.T) {
 		Result    string
 	}
 
-	largeInput := `"` + strings.Repeat("a", 2*wasm_util.PageSize) + `"`
+	largeInput := `"` + strings.Repeat("a", 2*PageSize) + `"`
 
 	tests := []struct {
 		Description string
@@ -278,7 +278,7 @@ a = "c" { input > 2 }`,
 				WithDataBytes(data).
 				WithPoolSize(1) // Minimal pool size to test pooling.
 			if len(test.Memory) == 2 {
-				o.WithMemoryLimits(test.Memory[0]*wasm_util.PageSize, test.Memory[1]*wasm_util.PageSize)
+				o.WithMemoryLimits(test.Memory[0]*PageSize, test.Memory[1]*PageSize)
 			}
 
 			instance, err := o.Init()

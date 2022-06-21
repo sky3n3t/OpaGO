@@ -3,6 +3,7 @@ package wasm
 import (
 	"bytes"
 	"context"
+	"log"
 	"sync"
 
 	"github.com/Kaijlo/OpaGO/wasmProject/sdk/opa/errors"
@@ -39,6 +40,10 @@ type Pool struct {
 	acquired       []bool
 	pendingReinit  *VM
 	blockedReinit  chan struct{}
+}
+
+func (p *Pool) GetMtxs() []sync.Mutex {
+	return []sync.Mutex{p.dataMtx, p.mutex}
 }
 
 // NewPool constructs a new pool with the pool and VM configuration provided.
@@ -106,7 +111,7 @@ func (p *Pool) Acquire(ctx context.Context, metrics metrics.Metrics) (*VM, error
 	}
 
 	policy, parsedData, parsedDataAddr := p.policy, p.parsedData, p.parsedDataAddr
-
+	log.Println("114", parsedData)
 	p.mutex.Unlock()
 	runt := (wazero.NewRuntime())
 	vm, err := newVM(vmOpts{
@@ -117,8 +122,8 @@ func (p *Pool) Acquire(ctx context.Context, metrics metrics.Metrics) (*VM, error
 		memoryMin:      p.memoryMinPages,
 		memoryMax:      p.memoryMaxPages,
 	}, &runt)
+	log.Println("125", parsedDataAddr)
 	p.mutex.Lock()
-
 	if err != nil {
 		p.available <- struct{}{}
 		return nil, errors.New(errors.InternalErr, err.Error())
@@ -167,7 +172,7 @@ func (p *Pool) Release(vm *VM, metrics metrics.Metrics) {
 func (p *Pool) SetPolicyData(ctx context.Context, policy []byte, data []byte) error {
 	p.dataMtx.Lock()
 	defer p.dataMtx.Unlock()
-
+	log.Println(p.initialized)
 	p.mutex.Lock()
 
 	if !p.initialized {
@@ -180,14 +185,17 @@ func (p *Pool) SetPolicyData(ctx context.Context, policy []byte, data []byte) er
 			memoryMin:      p.memoryMinPages,
 			memoryMax:      p.memoryMaxPages,
 		}, &runt)
-
+		log.Println(err)
 		if err == nil {
 			parsedDataAddr, parsedData := vm.cloneDataSegment()
+			log.Println(parsedDataAddr)
+			log.Println(parsedData)
 			p.memoryMinPages = uint32(vm.memoryMin)
 			p.vms = append(p.vms, vm)
 			p.acquired = append(p.acquired, false)
 			p.initialized = true
 			p.policy, p.parsedData, p.parsedDataAddr = policy, parsedData, parsedDataAddr
+			log.Println("188", p.parsedDataAddr)
 		} else {
 			err = errors.New(errors.InvalidPolicyOrDataErr, err.Error())
 		}
@@ -261,10 +269,10 @@ func (p *Pool) updateVMs(update func(vm *VM, opts vmOpts) error) error {
 	for {
 		vm := p.Wait(i)
 		if vm == nil {
+			log.Println("271", i)
 			// All have been updated or removed.
 			return nil
 		}
-
 		err := update(vm, vmOpts{
 			policy:         policy,
 			parsedData:     parsedData,
@@ -272,12 +280,11 @@ func (p *Pool) updateVMs(update func(vm *VM, opts vmOpts) error) error {
 			memoryMin:      seedMemorySize,
 			memoryMax:      p.memoryMaxPages, // The max pages cannot be changed while updating.
 		})
-
+		log.Println("282", parsedDataAddr)
 		if err != nil {
 			// No guarantee about the VM state after an error; hence, remove.
 			p.remove(i)
 			p.Release(vm, metrics.New())
-
 			// After the first successful activation, proceed through all the VMs, ignoring the remaining errors.
 			if !activated {
 				return err
@@ -291,12 +298,12 @@ func (p *Pool) updateVMs(update func(vm *VM, opts vmOpts) error) error {
 				activated = true
 				policy = vm.policy
 				parsedDataAddr, parsedData = vm.cloneDataSegment()
-				seedMemorySize = Pages(uint32(len(vm.module.readFrom(0))))
+				log.Println("300", parsedDataAddr)
+				seedMemorySize = Pages(uint32(vm.module.env.Memory().Size(context.Background())))
 				p.activate(policy, parsedData, parsedDataAddr, seedMemorySize)
 			}
 
 			p.Release(vm, metrics.New())
-
 			// Only increment on success
 			i++
 		}
@@ -320,28 +327,24 @@ func (p *Pool) Close() {
 func (p *Pool) Wait(i int) *VM {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-
 	if i == len(p.vms) {
+		log.Println("330", i)
 		return nil
 	}
-
 	vm := p.vms[i]
 	isActive := p.acquired[i]
 	p.acquired[i] = true
-
 	if isActive {
 		p.blockedReinit = make(chan struct{}, 1)
 		p.pendingReinit = vm
 	}
 
 	p.mutex.Unlock()
-
 	if isActive {
 		<-p.blockedReinit
 	} else {
 		<-p.available
 	}
-
 	p.mutex.Lock()
 	p.pendingReinit = nil
 	return vm
@@ -366,6 +369,5 @@ func (p *Pool) remove(i int) {
 func (p *Pool) activate(policy []byte, data []byte, dataAddr int32, minMemoryPages uint32) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-
 	p.policy, p.parsedData, p.parsedDataAddr, p.memoryMinPages = policy, data, dataAddr, minMemoryPages
 }

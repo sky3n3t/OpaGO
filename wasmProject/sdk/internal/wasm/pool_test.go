@@ -37,7 +37,6 @@ func TestOpaEvalGrowMemoryForLargeInput(t *testing.T) {
 	poolSize := 1
 	testPool := initPoolWithData(t, uint32(poolSize), module, "test/p", data)
 	expected := `{{"result":true}}`
-	t.Log("TestOpaEvalGrowMemoryForLargeInput success")
 	ensurePoolResults(t, ctx, testPool, poolSize, &input, expected)
 }
 
@@ -119,28 +118,28 @@ func TestPoolCopyParsedDataUpdatePartial(t *testing.T) {
 		expected string
 	}{
 		{
+			note:     "add set",
+			update:   ast.MustParseTerm(`{"x": {"y": {"z"}}}`),
+			path:     []string{"a", "b", "c"},
+			expected: `{{"result":{"b":{"c":{"x":{"y":["z"]}}}}}}`,
+		},
+		{
 			note:     "add object",
 			update:   util.MustUnmarshalJSON([]byte(`{"foo": 123}`)),
 			path:     []string{"a"},
 			expected: `{{"result":{"foo":123}}}`,
 		},
 		{
-			note:     "remove path",
-			path:     []string{"a", "foo"},
-			remove:   true,
-			expected: `{{"result":{}}}`,
-		},
-		{
-			note:     "add set",
-			update:   ast.MustParseTerm(`{"x": {"y": {"z"}}}`),
-			path:     []string{"a", "b", "c"},
-			expected: `{{"result":{"b":{"c":{"x":{"y":{"z"}}}}}}}`,
-		},
-		{
 			note:     "remove set",
 			path:     []string{"a", "b", "c", "x", "y"},
 			remove:   true,
 			expected: `{{"result":{"b":{"c":{"x":{}}}}}}`,
+		},
+		{
+			note:     "remove path",
+			path:     []string{"a", "foo"},
+			remove:   true,
+			expected: `{{"result":{}}}`,
 		},
 	}
 	for _, tc := range cases {
@@ -168,6 +167,8 @@ func ensurePoolResults(t *testing.T, ctx context.Context, testPool *wasm.Pool, p
 	var toRelease []*wasm.VM
 	for i := 0; i < poolSize; i++ {
 		vm, err := testPool.Acquire(ctx, metrics.New())
+		ptr, _ := vm.GetDataParsed()
+		t.Log(ptr)
 		if err != nil {
 			t.Fatalf("Unexpected error: %s", err)
 		}
@@ -213,7 +214,6 @@ func initPoolWithData(t *testing.T, size uint32, module string, entrypoint strin
 	}
 
 	testPool := wasm.NewPool(size, 16, 100)
-
 	err = testPool.SetPolicyData(ctx, compiler.Bundle().WasmModules[0].Raw, data)
 	if err != nil {
 		t.Fatalf("Unexpected error: %s", err)

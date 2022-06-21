@@ -13,10 +13,11 @@ import (
 	"testing"
 
 	"github.com/Kaijlo/OpaGO/wasmProject/sdk/opa"
-	"github.com/open-policy-agent/opa/internal/wasm/util"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/util/test"
 )
+
+const PageSize = 65535
 
 func BenchmarkWasmRego(b *testing.B) {
 	policy := compileRegoToWasm("a = true", "data.p.a = x", false)
@@ -97,7 +98,7 @@ func benchmarkIteration(b *testing.B, module string) {
 
 	instance, err := opa.New().
 		WithPolicyBytes(policy).
-		WithMemoryLimits(2*util.PageSize, 47*util.PageSize).
+		WithMemoryLimits(2*PageSize, 47*PageSize).
 		WithPoolSize(1).
 		Init()
 	if err != nil {
@@ -139,7 +140,7 @@ func BenchmarkWASMLargeJSON(b *testing.B) {
 			instance, err := opa.New().
 				WithPolicyBytes(policy).
 				WithDataJSON(data).
-				WithMemoryLimits(200*util.PageSize, 600*util.PageSize). // This is rather much
+				WithMemoryLimits(200*PageSize, 600*PageSize). // This is rather much
 				WithPoolSize(1).
 				Init()
 			if err != nil {
@@ -187,7 +188,7 @@ func runVirtualDocsBenchmark(b *testing.B, numTotalRules, numHitRules int) {
 
 	instance, err := opa.New().
 		WithPolicyBytes(policy).
-		WithMemoryLimits(8*util.PageSize, 8*util.PageSize).
+		WithMemoryLimits(8*PageSize, 8*PageSize).
 		WithPoolSize(1).
 		Init()
 	if err != nil {
