@@ -167,9 +167,6 @@ func ensurePoolResults(t *testing.T, ctx context.Context, testPool *wasm.Pool, p
 	var toRelease []*wasm.VM
 	for i := 0; i < poolSize; i++ {
 		vm, err := testPool.Acquire(ctx, metrics.New())
-		ptr, _ := vm.GetDataParsed()
-		t.Log(ptr)
-		t.Logf("VM:%d|parsedDataAddr:%d", i, ptr)
 		if err != nil {
 			t.Fatalf("Unexpected error: %s", err)
 		}

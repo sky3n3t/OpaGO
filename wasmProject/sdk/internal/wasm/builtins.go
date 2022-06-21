@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"fmt"
+
 	"strconv"
 
 	"github.com/open-policy-agent/opa/topdown"
@@ -9,7 +10,7 @@ import (
 
 func newBuiltinTable(mod Module) map[int32]topdown.BuiltinFunc {
 	builtinStrAddr := mod.builtins(mod.ctx)
-	builtinsJSON, err := mod.json_dump(mod.ctx, builtinStrAddr)
+	builtinsJSON, err := mod.json_dump(mod.ctx, (builtinStrAddr))
 	if err != nil {
 		panic(err)
 	}
@@ -17,7 +18,7 @@ func newBuiltinTable(mod Module) map[int32]topdown.BuiltinFunc {
 	builtinNameMap := parseJsonString(builtinStr)
 	builtinIdMap, err := getFuncs(builtinNameMap)
 	if err != nil {
-
+		panic(err)
 	}
 	return builtinIdMap
 }
@@ -58,7 +59,7 @@ func getFuncs(ids map[string]int32) (map[int32]topdown.BuiltinFunc, error) {
 	out := map[int32]topdown.BuiltinFunc{}
 	for name, id := range ids {
 		out[id] = topdown.GetBuiltin(name)
-		if out[id] == nil {
+		if out[id] == nil && name != "" {
 			return out, fmt.Errorf("no function named %s", name)
 		}
 	}

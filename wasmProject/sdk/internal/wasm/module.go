@@ -29,10 +29,9 @@ type moduleOpts struct {
 	vm         *VM
 }
 
-//wrapper for wazero module
+//wrapper for wazero policy module and environment module
 type Module struct {
 	module, env            api.Module
-	name                   string
 	ctx                    context.Context
 	tCTX                   *topdown.BuiltinContext
 	vm                     *VM
@@ -41,6 +40,7 @@ type Module struct {
 	entrypointT            map[string]int32
 }
 
+// Env is a wasm module that holds the shared memory buffer and the builtin bindings
 func (m *Module) newEnv(opts moduleOpts, r wazero.Runtime) (api.Module, error) {
 	if opts.maxMemSize == (moduleOpts{}).maxMemSize {
 
@@ -89,22 +89,24 @@ func (m *Module) opaAbort(ptr int32) {
 	}
 	log.Panic("error", out)
 }
-func (m *Module) Call(args ...int32) int32 {
+
+// calls the built-in functions
+func (m *Module) Call(id, ctx int32, args ...int32) int32 {
 	var output *ast.Term
 	pArgs := []*ast.Term{}
-	for _, ter := range args[2:] {
-		serialized, err := m.module.ExportedFunction("opa_value_dump").Call(m.ctx, uint64(ter))
+	for _, ter := range args {
+		serialized, err := m.value_dump(m.ctx, (ter))
 		if err != nil {
 			log.Panic(err)
 		}
-		data := m.readStr(uint32(serialized[0]))
+		data := m.readStr(uint32(serialized))
 		pTer, err := ast.ParseTerm(string(data))
 		if err != nil {
 			log.Panic(err)
 		}
 		pArgs = append(pArgs, pTer)
 	}
-	err := m.builtinT[args[0]](*m.tCTX, pArgs, func(t *ast.Term) error {
+	err := m.builtinT[id](*m.tCTX, pArgs, func(t *ast.Term) error {
 		output = t
 		return nil
 	})
@@ -125,27 +127,31 @@ func (m *Module) Call(args ...int32) int32 {
 	}
 	outB := []byte(output.String())
 	loc := m.writeMem(outB)
-	addr, err := m.module.ExportedFunction("opa_value_parse").Call(m.ctx, uint64(loc), uint64(len(outB)))
+	addr, err := m.value_parse(m.ctx, int32(loc), int32(len(outB)))
 	if err != nil {
 		log.Panic(err)
 	}
-	return int32(addr[0])
+	return int32(addr)
 }
-func (m *Module) C0(i, j int32) int32 {
-	return m.Call(i, j)
+
+// Exported to wasm and executes Call with the given builtin_id and arguments
+func (m *Module) C0(id, ctx int32) int32 {
+	return m.Call(id, ctx)
 }
-func (m *Module) C1(i, j, k int32) int32 {
-	return m.Call(i, j, k)
+func (m *Module) C1(id, ctx, a1 int32) int32 {
+	return m.Call(id, ctx, a1)
 }
-func (m *Module) C2(i, j, k, l int32) int32 {
-	return m.Call(i, j, k, l)
+func (m *Module) C2(id, ctx, a1, a2 int32) int32 {
+	return m.Call(id, ctx, a1, a2)
 }
-func (m *Module) C3(i, j, k, l, n int32) int32 {
-	return m.Call(i, j, k, l, n)
+func (m *Module) C3(id, ctx, a1, a2, a3 int32) int32 {
+	return m.Call(id, ctx, a1, a2, a3)
 }
-func (m *Module) C4(i, j, k, l, n, o int32) int32 {
-	return m.Call(i, j, k, l, n, o)
+func (m *Module) C4(id, ctx, a1, a2, a3, a4 int32) int32 {
+	return m.Call(id, ctx, a1, a2, a3, a4)
 }
+
+// resets the Builtin Context
 func (m *Module) Reset(ctx context.Context,
 	seed io.Reader,
 	ns time.Time,
@@ -217,22 +223,25 @@ func newModule(opts moduleOpts, r wazero.Runtime) Module {
 	return m
 }
 
-// memory accessors
+// reads the shared memory buffer
 func (m *Module) readMem(offset, length uint32) []byte {
 	data, _ := m.env.Memory().Read(m.ctx, offset, length)
 	return data
 }
+
+//reads a single byte from the shared memory buffer
 func (m *Module) readMemByte(offset uint32) byte {
 	data, _ := m.env.Memory().ReadByte(m.ctx, offset)
 	return data
 }
+
+//writes data to a given point in memory, grows if necessary
 func (m *Module) writeMemPlus(wAddr uint32, wData []byte, caller string) error {
 	dataLeft := (m.env.Memory().Size(m.ctx)) - wAddr
 	finPtrLoc := wAddr + uint32(len(wData))
 	if (m.env.Memory().Size(m.ctx)) < finPtrLoc { // need to grow memory
 
 		delta := uint32(len(wData)) - dataLeft
-		//		log.Printf("delta:%d|dataSiz:%d|memLeft:%d|finLen:%d", delta, len(wData), dataLeft, wAddr+uint32(len(wData)))
 		_, success := m.env.Memory().Grow(m.ctx, Pages(uint32(delta)))
 		if !success {
 			return fmt.Errorf("%s: failed to grow memory by `%d` (max pages %d)", caller, Pages(delta), m.maxMemSize)
@@ -241,6 +250,8 @@ func (m *Module) writeMemPlus(wAddr uint32, wData []byte, caller string) error {
 	m.env.Memory().Write(m.ctx, wAddr, wData)
 	return nil
 }
+
+//allocates and writes data to the shared memory buffer
 func (m *Module) writeMem(data []byte) uint32 {
 	addr, err := m.malloc(m.ctx, int32(len(data)))
 	if err != nil {
@@ -250,6 +261,8 @@ func (m *Module) writeMem(data []byte) uint32 {
 
 	return uint32(addr)
 }
+
+//reads a null terminated string starting at the given address in the shared memory buffer
 func (m *Module) readStr(loc uint32) string {
 	bytes := []byte{}
 	var index uint32 = 0
@@ -276,6 +289,8 @@ func (m *Module) fromRegoJSON(addr int32) string {
 	str := m.readStr(uint32(dump_addr))
 	return str
 }
+
+//Reads and returns the shared memory buffer from the given address and stops when it reaches the terminator byte or reaches the end of the buffer
 func (m *Module) readUntil(addr int32, terminator byte) []byte {
 	out := []byte{}
 	for i, j := addr, true; j; i++ {
@@ -287,6 +302,8 @@ func (m *Module) readUntil(addr int32, terminator byte) []byte {
 	}
 	return out
 }
+
+//reads the shared memory buffer from the given address to the end
 func (m *Module) readFrom(addr int32) []byte {
 	out := []byte{}
 	for i, j := addr, true; j; i++ {

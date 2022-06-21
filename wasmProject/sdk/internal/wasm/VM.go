@@ -11,7 +11,6 @@ import (
 	"github.com/open-policy-agent/opa/topdown/print"
 	"github.com/tetratelabs/wazero"
 	"io"
-	//"log"
 	"time"
 )
 
@@ -28,7 +27,6 @@ type VM struct {
 	ctx                  context.Context
 	module               Module
 	policy               []byte
-	parsedInputAddr      uint32
 	memoryMin            int
 	memoryMax            int
 	abiMajorVersion      int32
@@ -114,17 +112,8 @@ func (i *VM) SetPolicyData(ctx context.Context, opts vmOpts) error {
 	return i.setData(opts, i.ctx, "setPolicyData")
 }
 
-type abortError struct {
-	message string
-}
-
-type cancelledError struct {
-	message string
-}
-
 func (v *VM) setData(opts vmOpts, ctx context.Context, path string) error {
 	var err error
-	//log.Println(path)
 	if v.baseHeapPtr, err = v.getHeapState(ctx); err != nil {
 		return err
 	}
@@ -134,30 +123,24 @@ func (v *VM) setData(opts vmOpts, ctx context.Context, path string) error {
 	// This only works because the placement is deterministic (eg, for a given policy
 	// the base heap pointer and parsed data layout will always be the same).
 	if opts.parsedData != nil {
-		//log.Println("opts.parsedData is not nil")
 		err = v.module.writeMemPlus(uint32(v.baseHeapPtr), opts.parsedData, "data")
 		if err != nil {
 			return err
 		}
 		v.dataAddr = opts.parsedDataAddr
 		v.evalHeapPtr = v.baseHeapPtr + int32(len(opts.parsedData))
-		//log.Println(v.evalHeapPtr)
 		err := v.setHeapState(ctx, v.evalHeapPtr)
 		if err != nil {
 			return err
 		}
 	} else if opts.data != nil {
-		//log.Println("opts.data is not nil")
 		if err = v.toDRegoJSON(ctx, opts.data, true); err != nil {
 			return err
 		}
 	}
-	//log.Println(v.evalHeapPtr)
-	//log.Println("getting heap state")
 	if v.evalHeapPtr, err = v.getHeapState(ctx); err != nil {
 		return err
 	}
-	//log.Println(v.evalHeapPtr)
 	return nil
 }
 
@@ -170,10 +153,6 @@ func (i *VM) Println(arg int32) {
 	}
 
 	fmt.Printf("opa_println(): %s\n", string(data[:n]))
-}
-
-type builtinError struct {
-	err error
 }
 
 // Entrypoints returns a mapping of entrypoint name to ID for use by Eval().
@@ -290,6 +269,11 @@ func (i *VM) toRegoJSON(ctx context.Context, v interface{}, free bool) (int32, e
 
 	return addr, nil
 }
+
+//
+//Parses the json data, writes it to the shared memory buffer and updates the baseHeapPtr and evalHeapPtr values accordingly
+//Is used when setting the policy data
+//
 func (i *VM) toDRegoJSON(ctx context.Context, v interface{}, free bool) error {
 	var raw []byte
 	switch v := v.(type) {
@@ -335,21 +319,16 @@ func (i *VM) getHeapState(ctx context.Context) (int32, error) {
 func (i *VM) setHeapState(ctx context.Context, ptr int32) error {
 	return i.heapPtrSet(ctx, ptr)
 }
+
+//copies the parsed data to optimize cloning VMs
 func (vm *VM) cloneDataSegment() (int32, []byte) {
-	//log.Printf("MemSize:%d|BaseHeapPtr:%d|EvalHeapPtr:%d \n", vm.module.env.Memory().Size(vm.ctx), vm.baseHeapPtr, vm.evalHeapPtr)
 	srcData := vm.module.readFrom(0)[vm.baseHeapPtr:vm.evalHeapPtr]
 	patchedData := make([]byte, len(srcData))
 	copy(patchedData, srcData)
 	return vm.dataAddr, patchedData
 }
-func (vm *VM) Name() string {
-	return vm.module.name
-}
 func (vm *VM) GetEntrypoints() map[string]int32 {
 	return vm.module.GetEntrypoints()
-}
-func (vm *VM) Module() Module {
-	return vm.module
 }
 func (i *VM) Eval(ctx context.Context,
 	entrypoint int32,
@@ -499,25 +478,4 @@ func (i *VM) evalCompat(ctx context.Context,
 
 	// Skip free'ing input and result JSON as the heap will be reset next round anyway.
 	return data, nil
-}
-func (vm *VM) GetData() string {
-	dataLoc, _ := vm.module.json_dump(vm.ctx, int32(vm.dataAddr))
-	return vm.module.readStr(uint32(dataLoc))
-}
-func (vm *VM) GetPolicy() string {
-	out := ""
-	for _, b := range vm.policy {
-		out += string(b)
-	}
-	return out
-}
-func (vm *VM) GetDataParsed() (int32, []byte) {
-	return vm.dataAddr, vm.module.readMem(uint32(vm.baseHeapPtr), uint32(vm.evalHeapPtr)-uint32(vm.baseHeapPtr))
-}
-func (vm *VM) GetJustDataParsed() []byte {
-	//log.Printf("MemSize:%d|BaseHeapPtr:%d|EvalHeapPtr:%d \n", vm.module.env.Memory().Size(vm.ctx), vm.baseHeapPtr, vm.evalHeapPtr)
-	srcData := vm.module.readFrom(0)[vm.baseHeapPtr:vm.evalHeapPtr]
-	patchedData := make([]byte, len(srcData))
-	copy(patchedData, srcData)
-	return patchedData
 }

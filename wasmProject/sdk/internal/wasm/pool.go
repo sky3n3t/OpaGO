@@ -14,20 +14,6 @@ var errNotReady = errors.New(errors.NotReadyErr, "")
 
 const PageSize = 65535
 
-func compByteArray(A ...[]byte) bool {
-	l := len(A[0])
-	for _, a := range A {
-		if len(a) != l {
-			return false
-		}
-		for i := range a {
-			if A[0][i] != a[i] {
-				return false
-			}
-		}
-	}
-	return true
-}
 func Pages(n uint32) uint32 {
 	pages := n / PageSize
 	if pages*PageSize == n {
@@ -53,10 +39,6 @@ type Pool struct {
 	acquired       []bool
 	pendingReinit  *VM
 	blockedReinit  chan struct{}
-}
-
-func (p *Pool) GetMtxs() []sync.Mutex {
-	return []sync.Mutex{p.dataMtx, p.mutex}
 }
 
 // NewPool constructs a new pool with the pool and VM configuration provided.

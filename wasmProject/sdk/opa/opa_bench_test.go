@@ -10,15 +10,46 @@ package opa_test
 import (
 	"context"
 	"fmt"
-	"testing"
-
 	"github.com/Kaijlo/OpaGO/wasmProject/sdk/opa"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/util/test"
+	"os"
+	"strings"
+	"testing"
 )
 
 const PageSize = 65535
 
+func compileRegoToWasm(module string, query string, dump bool) []byte {
+	if !strings.HasPrefix(module, "package") {
+		module = fmt.Sprintf("package p\n%s", module)
+	}
+	opts := []func(*rego.Rego){
+		rego.Query(query),
+		rego.Module("module.rego", module),
+	}
+	if dump {
+		opts = append(opts, rego.Dump(os.Stderr))
+	}
+	cr, err := rego.New(opts...).Compile(context.Background(), rego.CompilePartial(false))
+	if err != nil {
+		panic(err)
+	}
+
+	return cr.Bytes
+}
+func compileRego(module string, query string) rego.PreparedEvalQuery {
+	rego := rego.New(
+		rego.Query(query),
+		rego.Module("module.rego", module),
+	)
+	pq, err := rego.PrepareForEval(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	return pq
+}
 func BenchmarkWasmRego(b *testing.B) {
 	policy := compileRegoToWasm("a = true", "data.p.a = x", false)
 	instance, _ := opa.New().
