@@ -30,11 +30,11 @@ import (
 // VM is a wrapper around a Wasm VM instance
 type VM struct {
 	dispatcher           *builtinDispatcher
-	store                *wazero.Runtime
+	store                wazero.Runtime
 	policy               []byte
 	abiMajorVersion      int32
 	abiMinorVersion      int32
-	memory               *api.Memory
+	memory               api.Memory
 	memoryMin            uint32
 	memoryMax            uint32
 	entrypointIDs        map[string]int32

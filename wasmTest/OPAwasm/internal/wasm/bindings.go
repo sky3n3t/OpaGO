@@ -27,7 +27,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-func opaFunctions(d *builtinDispatcher, ctx *context.Context, r *wazero.Runtime) api.Module {
+func opaFunctions(d *builtinDispatcher, ctx context.Context, r wazero.Runtime) api.Module {
 
 	externs := map[string]wasmtime.AsExtern{
 		"opa_abort":    wasmtime.NewFunc(store, wasmtime.NewFuncType([]*wasmtime.ValType{int32}, nil), opaAbort),
@@ -39,7 +39,7 @@ func opaFunctions(d *builtinDispatcher, ctx *context.Context, r *wazero.Runtime)
 		"opa_println":  wasmtime.NewFunc(store, wasmtime.NewFuncType([]*wasmtime.ValType{int32}, nil), opaPrintln),
 	}
 	return externs
-	env, _ := wazero.NewRuntime().NewModuleBuilder("env").
+	env, _ := wazero.NewRuntime(ctx).NewModuleBuilder("env").
 		ExportFunction("opa_abort", opaAbort).
 		ExportFunction("opa_builtin0", func(i, j int32) int32 { return i }).
 		ExportFunction("opa_builtin1", func(i, j, k int32) int32 { return i }).

@@ -17,7 +17,7 @@ import (
 	"github.com/open-policy-agent/opa/topdown/builtins"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/wasi_snapshot_preview1"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 var (
@@ -52,7 +52,7 @@ func main() {
 		log.Panicln(err)
 	}
 	// Create a new WebAssembly Runtime.
-	r := wazero.NewRuntime()
+	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx) // This closes everything this Runtime created.
 	// Instantiate the module and return its exported functions
 	if _, err = wasi_snapshot_preview1.Instantiate(ctx, r); err != nil {

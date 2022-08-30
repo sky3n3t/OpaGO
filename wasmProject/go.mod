@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/open-policy-agent/opa v0.41.0
-	github.com/tetratelabs/wazero v0.0.0-20220615025247-3068d17c7731
+	github.com/tetratelabs/wazero v1.0.0-pre.1
 )
 
 require (
